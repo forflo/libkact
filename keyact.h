@@ -18,7 +18,7 @@ enum sys {x11 = 0, osx, win};
 struct keyact {
 	pthread *event_loop;
 	pthread_mutex_t *mutex;
-	slist *mapping;
+	struct slist *mapping;
 };
 
 struct keycomb_x11 {

@@ -246,7 +246,7 @@ static void *event_loop(void *k){
 static void search_x11(struct keyact *k, XEvent *e){
 	int i, *rc;
 	struct keycomb *temp;
-	for(i=0; i<k->mapping.len; i++){
+	for(i=0; i<k->mapping->len; i++){
 		temp = (struct keycomb *) slist_get_at(i, k->mapping, rc);
 		if(temp->internal.x11.keycode == e->xkey.keycode &&
 			temp->internal.x11.mod_mask == e->xkey.state) {
