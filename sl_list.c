@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include "slist.h"
 
-#ifdef TEST
+#ifdef TESTX
 #include <CUnit/Cunit.h>
 #include <CUnit/Basic.h>
 #endif
@@ -249,7 +249,7 @@ int slist_free(struct slist *list){
 	return 0;
 }
 
-#ifdef TEST
+#ifdef TESTX
 
 int init_test(void){return 0;}
 

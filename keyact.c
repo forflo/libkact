@@ -3,19 +3,21 @@
 #include <stdio.h>
 #include <pthread.h>
 #include <X11/Xlib.h>
+#include <unistd.h>
 #include "keyact.h"
 #include "slist.h"
 
-static int transform_osx(union hotkey *h, struct keycomb *k);
-static int transform_win32(union hotkey *h, struct keycomb *k);
-static int transform_x11(union hotkey *h, struct keycomb *k);
+#ifdef TEST
+#include <CUnit/Cunit.h>
+#include <CUnit/Basic.h>
+#endif 
+
+static int transform(struct hotkey *h, struct keycomb *k);
 static void search_x11(struct keyact *k, XEvent *e);
 
 static void *event_loop(void *k);
+static void loop_clean(void *k);
 static int *on_error(Display *d, XErrorEvent *e);
-int register_hotkey(struct keycomb *c, struct keyact *k);
-struct keyact *init();
-int start(struct keyact *k);
 
 /* Registers the hotkey c in the system k 
  	Param: c = A valid pointer to a keycomb structure. get_keycomb returns
@@ -23,7 +25,8 @@ int start(struct keyact *k);
  		k = A valid pointer to a keyact structure. An keyact structure
  		can be queried by init. 
  	Return: 0 on success and -1 on failure */
-int register_hotkey(struct keycomb *c, struct keyact *k){
+int kact_reg_hk(struct keycomb *c, struct keyact *k){
+	int i;
 	if(c == NULL || k == NULL)
 		return -1;
 	if(k->mutex == NULL)
@@ -34,8 +37,13 @@ int register_hotkey(struct keycomb *c, struct keyact *k){
 		pthread_mutex_unlock(k->mutex);
 		return -1;
 	}
-	/* proper unlocking */
 	pthread_mutex_unlock(k->mutex);
+
+	/* Register the Hotkey */
+	for(i=0; i<XScreenCount(k->display); i++)
+		XGrabKey(k->display, c->internal.keycode, c->internal.mod_mask,
+				XRootWindow(k->display, i), 0, GrabModeAsync, GrabModeAsync);
+
 	return 0;
 }
 
@@ -58,28 +66,20 @@ int register_hotkey(struct keycomb *c, struct keyact *k){
 		function func
 	Return: A new object of type struct keycomb or NULL if an error
 		occured */
-struct keycomb *get_keycomb(int (*func)(void *mp), char *mod, int key, void *mp){
+struct keycomb *kact_get_hk(int (*func)(void *mp), const char *mod, int key, void *mp){
 	if(func == NULL)
 		return NULL;
 	struct keycomb *res = (struct keycomb *) malloc(sizeof(struct keycomb));
 	if(res == NULL)
 		return NULL;
 	res->func = func;
-	res->user_mod = mod;
+	res->user_mod = (char *) malloc(sizeof(char) * (strlen(mod) + 1));
+	strcpy(res->user_mod, mod);	
 	res->key = key;
-	union hotkey temp;
-	/* Populate the hotkey union */
-	switch(SYS){
-		case x11:
-			if(transform_x11(&temp, res))
-				return NULL; //TODO free!
-		case osx:
-			if(transform_win32(&temp, res))
-				return NULL;
-		case win:
-			if(transform_osx(&temp, res))
-				return NULL;
-	}
+	struct hotkey temp;
+	/* Populate the hotkey structure */
+	if(transform(&temp, res))
+		return NULL; //TODO free!
 	res->internal = temp;
 	res->mod_param = mp;
 	return res;
@@ -90,7 +90,7 @@ struct keycomb *get_keycomb(int (*func)(void *mp), char *mod, int key, void *mp)
  	Param: h = A valid (local) pointer of a hotkey union instance
  		k = A valid pointer of the current keycombination object 
  	Return: 0 on success or -1 on failure */
-static int transform_x11(union hotkey *h, struct keycomb *k){
+static int transform(struct hotkey *h, struct keycomb *k){
 	if(h == NULL || k == NULL)
 		return -1;
 	struct x11_mask mask[] = {
@@ -98,55 +98,50 @@ static int transform_x11(union hotkey *h, struct keycomb *k){
 		{"lock", 1<<1},
 		{"ctrl", 1<<2}
 	};
-	struct keycomb_x11 x11;
 	int i;
 
 	Display *display = XOpenDisplay(XDisplayName(NULL));
 	
 	char *temp;
 	char *keystr = (char *) malloc(sizeof(char));
-	if(keystr == NULL)
+	char *mod_copy = (char *) malloc(sizeof(char) * (strlen(k->user_mod) + 1));
+
+	if(keystr == NULL || mod_copy == NULL)
 		return -1;
 
 	if(!display)
 		return -1;
 
-	temp = strtok(k->user_mod, DELIM);
+	strcpy(mod_copy, k->user_mod);
+	temp = strtok(mod_copy, DELIM);
 	while(1){
 		if(temp == NULL)
 			break;
 		//iterate through mask[]. TODO remove magic number
 		for(i=0; i<3; i++){
 			if(!strcmp(mask[i].modstr, temp))
-				x11.mod_mask |= mask[i].mask;
+				h->mod_mask |= mask[i].mask;
 		}
-		temp = strtok(k->user_mod, DELIM);
+		temp = strtok(NULL, DELIM);
 	}
 	// no modifiers have been found
-	if(x11.mod_mask == 0)
+	if(h->mod_mask == 0)
 		return -1;
 
 	sprintf(keystr, "%c", (char) k->key);
-	x11.keycode = XKeysymToKeycode(display, XStringToKeysym(keystr));
-	h->x11 = x11;
+	h->keycode = XKeysymToKeycode(display, XStringToKeysym(keystr));
 
 	free(keystr);
+	free(mod_copy);
+	XCloseDisplay(display);
 	return 0;
-}
-
-static int transform_osx(union hotkey *h, struct keycomb *k){
-	//not yet implemented
-}
-
-static int transform_win32(union hotkey *h, struct keycomb *k){
-	//not yet implemented
 }
 
 /* Returns an initialized keyact object
 	Param: void
 	Return: Initialized instance of struct keyact. The mutex and the singly
 		linked list members are populated with valid objects. */
-struct keyact *init(){
+struct keyact *kact_init(){
 	struct keyact *res = (struct keyact *) malloc(sizeof(struct keyact));
 	if(res == NULL)
 		return NULL;
@@ -155,34 +150,81 @@ struct keyact *init(){
 	if(res->mapping == NULL)
 		return NULL;
 
+	res->display = XOpenDisplay(XDisplayName(NULL));
+	if(!res->display)
+		return NULL;
+	res->mutex = (pthread_mutex_t *) malloc(sizeof(pthread_mutex_t));
+	if(res->mutex == NULL)
+		return NULL;
 	if(pthread_mutex_init(res->mutex, NULL))
 		return NULL;
+
+	res->cancel = 0;
+	return res;
 }
 
 /* Starts the main event loop. This is a convenience function, since it
  	would be very easy for the user to start the loop */
-int start(struct keyact *k){
-	pthread_t *thread;
+int kact_start(struct keyact *k){
+	pthread_t *thread = (pthread_t *) malloc(sizeof(pthread_t));
 	pthread_create(thread, NULL, event_loop, (void *) k);
 
 	return 0;
 }
 
 /* Stops the main event loop */
-int stop(struct keyact *k){
+int kact_stop(struct keyact *k){
 	return pthread_cancel(*k->event_loop);
 }
 
 /* Stops the main even loop and frees all resources occupied by a 
 	keyact structure including it's member mapping */
-int clear(struct keyact *k){
-	int rc;
-	rc += pthread_mutex_destroy(k->mutex);
-	rc += pthread_cancel(*k->event_loop);
+int kact_clear(struct keyact *k){
+	int rc = 0;
+
+	/* We have to send an event to unblock the call to XNextEvent in
+		the event_loop. TODO: propably it's better to outsource the following
+		code for better readability */
+	k->cancel = 1;
+
+	XEvent ev;
+	XKeyEvent dummy;
+	memset(&ev, 0, sizeof(XEvent));
+	memset(&dummy, 0, sizeof(XKeyEvent));
+
+	dummy.display = k->display;
+	dummy.subwindow = None;
+	dummy.root = None;
+	dummy.time = CurrentTime;
+	dummy.x = 1;
+	dummy.y = 1;
+	dummy.x_root = 1;
+	dummy.y_root = 1;
+	dummy.same_screen = True;
+	dummy.window = XRootWindow(k->display, 0);
+	dummy.state = None;
+	dummy.keycode = None;	
+	dummy.type = KeyPress;
+
+	ev.type = KeyPress;	
+	ev.xkey = dummy;
+
+	XSendEvent(k->display, XRootWindow(k->display, 0), 0, 
+			KeyPressMask, &ev);
+	XFlush(k->display);
+	usleep(SLEEP_TIME);
+
+	XCloseDisplay(k->display);
+	if(k->event_loop != NULL)
+		rc += pthread_cancel(*k->event_loop);
+	if(k->mutex != NULL)
+		rc += pthread_mutex_destroy(k->mutex);
+
 	rc += slist_free(k->mapping);
 	free(k);
 	return rc;
 }
+
 
 /* The main event loop which queries the environment for keystrokes and
  	hotkeys. If a hotkey occures, the corresponding function will be 
@@ -191,16 +233,12 @@ int clear(struct keyact *k){
  	Return: (void *) -1 on failure or (void*) 0 on success */
 static void *event_loop(void *k){
 	struct keyact *env = (struct keyact *) k;
-	Display *display;
+	struct keycomb *temp;
+	Display *display = env->display;
 	XEvent event;
 	char *disp_name;
-	int i;
+	int i, *rc = (int *) malloc(sizeof(int));
 
-	/* Open Display and configure events and input */		
-	disp_name = XDisplayName(NULL);
-	display = XOpenDisplay(disp_name);
-	if(!display)
-		pthread_exit((void *)-1);
 
 	/* XAllowEvents is described in chapter 12 
 		of the official Xlib documentation. 
@@ -209,19 +247,39 @@ static void *event_loop(void *k){
 
 	/* Select press, release and motion events from the root windows
 	 	of all screens */
-	for(i=0; i<ScreenCount(display); i++)
-		XSelectInput(display, RootWindow(display, i), 
-				KeyPressMask | KeyReleaseMask | PointerMotionMask);
+	for(i=0; i<XScreenCount(display); i++)
+		XSelectInput(display, XRootWindow(display, i), 
+			KeyPressMask | KeyReleaseMask | ExposureMask);
 
 	XSetErrorHandler((XErrorHandler) on_error);
 
 	/* Main event loop */
-	while(1){
+	/* Traverses the slist mapping in k until it finds a fitting hotkey 
+	description. 
+	Param: e = A pointer to an XEvent object
+		k = A pointer to an instance of struct keyact where the singly 
+		list resides that has to be traversed */
+	for(;;){
 		XNextEvent(display, &event);
-		
+		if(env->cancel)
+			break;
+
+		//Synchronize while operating on the list
+		pthread_mutex_lock(env->mutex);
 		switch(event.type){
 			case KeyPress:
-				search_x11(env, &event);
+				for(i=0; i<env->mapping->len; i++){
+					temp = (struct keycomb *) slist_get_at(i, env->mapping, rc);
+					if(*rc == -1) 
+						break;
+
+					if(temp->internal.keycode == event.xkey.keycode &&
+							temp->internal.mod_mask == event.xkey.state) {
+						/* run the function only once */
+						temp->func(temp->mod_param);
+						break;
+					}
+				}
 				break;
 			case KeyRelease:
 
@@ -235,25 +293,8 @@ static void *event_loop(void *k){
 			default:
 				break;
 		}
-	}
-}
 
-/* Traverses the slist mapping in k until it finds a fitting hotkey 
- 	description. 
- 	Param: e = A pointer to an XEvent object
- 		k = A pointer to an instance of struct keyact where the singly 
- 		list resides that has to be traversed */
-static void search_x11(struct keyact *k, XEvent *e){
-	int i, *rc;
-	struct keycomb *temp;
-	for(i=0; i<k->mapping->len; i++){
-		temp = (struct keycomb *) slist_get_at(i, k->mapping, rc);
-		if(temp->internal.x11.keycode == e->xkey.keycode &&
-			temp->internal.x11.mod_mask == e->xkey.state) {
-			/* run the function only once */
-			temp->func(temp->mod_param);
-			break;
-		}
+		pthread_mutex_unlock(env->mutex);
 	}
 }
 
@@ -268,3 +309,136 @@ static int *on_error(Display *d, XErrorEvent *e){
 	return NULL;
 }
 
+#ifdef TEST
+
+int dummy(void){
+	return 0;
+}
+
+void test_init(void){
+	struct keyact *env = kact_init();
+	CU_ASSERT(env != NULL);
+	CU_ASSERT(env->mapping != NULL);
+	CU_ASSERT(env->mapping->len == 0);
+	CU_ASSERT(env->event_loop == NULL);
+	CU_ASSERT(env->cancel == 0);
+	CU_ASSERT(env->mutex != NULL);
+	CU_ASSERT(kact_clear(env) == 0);
+}
+
+int test_func(void *p){
+	struct keycomb *k = (struct keycomb *) p;
+	if(!strcmp(k->user_mod, "ctrl,shift")) 
+		switch(k->key){
+			case (int) 't':
+				printf("ctrl - shift - t\n");
+				break;
+			case (int) 'f':
+				printf("ctrl - shift - f\n");
+				break;
+		}
+	return 0;
+}
+
+void test_usage(void){
+	struct keyact *env = kact_init();
+	CU_ASSERT(env != NULL);
+	if(env == NULL)
+		return;
+
+	/* Tests for a single hotkey representation */
+	struct keycomb *hk = kact_get_hk(test_func, "ctrl,shift", 
+							(int) 't', (void *) 8);
+	struct keycomb *hk2 = kact_get_hk(test_func, "ctrl,shift", 
+							(int) 'f', (void *) 8);
+
+	hk->mod_param = (void *) hk;
+	hk2->mod_param = (void *) hk2;
+
+	CU_ASSERT(hk != NULL);
+	if(hk == NULL)
+		return;
+	CU_ASSERT(hk->func == test_func);
+	CU_ASSERT(hk->user_mod != NULL);
+	CU_ASSERT(hk->key == (int) 't');
+	CU_ASSERT(hk->internal.keycode == 28);
+	CU_ASSERT(hk->internal.mod_mask == 1<<0 | 1<<2);
+	CU_ASSERT(hk->internal.mod_mask == (unsigned int) 5);
+	CU_ASSERT(hk->internal.mod_mask == 5);
+	CU_ASSERT(hk->mod_param == (void *) hk);
+	
+	CU_ASSERT(kact_reg_hk(hk, env) == 0);
+	CU_ASSERT(kact_reg_hk(hk2, env) == 0);
+
+	/* Tests for Thread starting and stopping */
+	CU_ASSERT(kact_start(env) == 0);
+	sleep(10);
+
+	printf("Sende künstliches Event\n");
+	/* Assemble artificial XKeyEvent */
+	XEvent ev;
+	XKeyEvent dummy;
+	memset(&ev, 0, sizeof(XEvent));
+	memset(&dummy, 0, sizeof(XKeyEvent));
+
+	dummy.display = env->display;
+	dummy.subwindow = None;
+	dummy.root = None;
+	dummy.time = CurrentTime;
+	dummy.x = 1;
+	dummy.y = 1;
+	dummy.x_root = 1;
+	dummy.y_root = 1;
+	dummy.same_screen = True;
+	dummy.window = XRootWindow(env->display, 0);
+	dummy.state = hk->internal.mod_mask;
+	dummy.keycode = hk->internal.keycode;	
+	dummy.type = KeyPress;
+
+	ev.type = KeyPress;	
+	ev.xkey = dummy;
+
+	XSendEvent(env->display, XRootWindow(env->display, 0), 0, 
+			KeyPressMask, &ev);
+	XFlush(env->display);
+	/* Sleep necessary because a deadlock would occure if else */
+	sleep(3);
+
+	printf("Stoppen...\n");
+	CU_ASSERT(kact_clear(env) == 0);
+	//Fin	
+}
+
+/* Required calls to CUnit. Test will be registered  */
+int main(int argc, char **argv){
+	/* Initialize and build a Testsuite */
+	CU_pSuite pSuite = NULL;
+
+	if (CUE_SUCCESS != CU_initialize_registry())
+		return CU_get_error();
+
+	/* Creation of the main test suite */
+	pSuite = CU_add_suite("Librarytest von libkeyact", dummy, dummy); 
+	if (NULL == pSuite){
+		CU_cleanup_registry();
+		return CU_get_error();
+	}
+
+	/* Adds tests */
+	if((NULL == CU_add_test(pSuite, "Initialisierungstest", test_init)) || 
+		(NULL == CU_add_test(pSuite, "Usagetest", test_usage))
+	)
+
+	{
+		CU_cleanup_registry();
+		return CU_get_error();
+	}
+
+	/* misc configuration */
+	CU_basic_set_mode(CU_BRM_VERBOSE);
+	CU_basic_run_tests();
+	CU_cleanup_registry();
+	return CU_get_error();
+}
+
+#endif
