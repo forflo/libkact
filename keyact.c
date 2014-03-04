@@ -77,7 +77,9 @@ struct keycomb *kact_get_hk(int (*func)(void *mp), const char *mod, int key, voi
 	res->user_mod = (char *) malloc(sizeof(char) * (strlen(mod) + 1));
 	strcpy(res->user_mod, mod);	
 	res->key = key;
-	struct hotkey temp;
+	struct hotkey temp = { 0, 0 };
+	/*temp.keycode = 0;*/
+	/*temp.mod_mask = 0;*/
 	/* Populate the hotkey structure */
 	if(transform(&temp, res))
 		return NULL; //TODO free!
@@ -124,7 +126,7 @@ static int transform(struct hotkey *h, struct keycomb *k){
 		if(temp == NULL)
 			break;
 		//iterate through mask[]. TODO remove magic number
-		for(i=0; i<3; i++){
+		for(i=0; i<sizeof(mask); i++){
 			if(!strcmp(mask[i].modstr, temp))
 				h->mod_mask |= mask[i].mask;
 		}
@@ -383,21 +385,21 @@ void test_mod(void){
 		return;
 
 	/* Tests for a single hotkey representation */
-	struct keycomb *hk1 = kact_get_hk(test_func, "ctrl", 
+	struct keycomb *hk1 = kact_get_hk(test_func2, "ctrl,shift,mod1,mod5", 
+							(int) 't', (void *) 8);
+	struct keycomb *hk2 = kact_get_hk(test_func2, "ctrl", 
 							(int) 'f', (void *) 8);
-	struct keycomb *hk2 = kact_get_hk(test_func, "shift", 
+	struct keycomb *hk3 = kact_get_hk(test_func2, "lock", 
 							(int) 'f', (void *) 8);
-	struct keycomb *hk3 = kact_get_hk(test_func, "lock", 
+	struct keycomb *hk4 = kact_get_hk(test_func2, "mod1", 
 							(int) 'f', (void *) 8);
-	struct keycomb *hk4 = kact_get_hk(test_func, "mod1", 
+	struct keycomb *hk5 = kact_get_hk(test_func2, "mod2", 
 							(int) 'f', (void *) 8);
-	struct keycomb *hk5 = kact_get_hk(test_func, "mod2", 
+	struct keycomb *hk6 = kact_get_hk(test_func2, "mod3", 
 							(int) 'f', (void *) 8);
-	struct keycomb *hk6 = kact_get_hk(test_func, "mod3", 
+	struct keycomb *hk7 = kact_get_hk(test_func2, "mod4", 
 							(int) 'f', (void *) 8);
-	struct keycomb *hk7 = kact_get_hk(test_func, "mod4", 
-							(int) 'f', (void *) 8);
-	struct keycomb *hk8 = kact_get_hk(test_func, "mod5", 
+	struct keycomb *hk8 = kact_get_hk(test_func2, "mod5", 
 							(int) 'f', (void *) 8);
 
 	hk1->mod_param = (void *) hk1;
@@ -418,8 +420,9 @@ void test_mod(void){
 	kact_reg_hk(hk7, env);
 	kact_reg_hk(hk8, env);
 
+	printf("\n Starte event loop...\n");
 	kact_start(env);
-	sleep(1000);
+	sleep(100);
 	CU_ASSERT(kact_clear(env) == 0);
 }
 
