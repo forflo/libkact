@@ -17,6 +17,7 @@ static void search_x11(struct keyact *k, XEvent *e);
 
 static void *event_loop(void *k);
 static void loop_clean(void *k);
+static void send_devent(struct keyact *k);
 static int *on_error(Display *d, XErrorEvent *e);
 
 /* Registers the hotkey c in the system k 
@@ -96,7 +97,12 @@ static int transform(struct hotkey *h, struct keycomb *k){
 	struct x11_mask mask[] = {
 		{"shift", 1<<0},
 		{"lock", 1<<1},
-		{"ctrl", 1<<2}
+		{"ctrl", 1<<2},
+		{"mod1", 1<<3},
+		{"mod2", 1<<4},
+		{"mod3", 1<<5},
+		{"mod4", 1<<6},
+		{"mod5", 1<<7}
 	};
 	int i;
 
@@ -172,20 +178,30 @@ int kact_start(struct keyact *k){
 	return 0;
 }
 
-/* Stops the main event loop */
+/* Stops the main event loop and closes the connection to the x-server
+  	 leaving everything else untouched 
+ 	Param: k = A Valid pointer to an keyact structure containing the 
+ 		display pointer 
+ 	Return: 0 on success -1 if an invalid value has been given as arguemnt */
 int kact_stop(struct keyact *k){
-	return pthread_cancel(*k->event_loop);
+	if(k == NULL)
+		return -1;
+
+	k->cancel = 1;
+	send_devent(k);
+	usleep(SLEEP_TIME);
+	XCloseDisplay(k->display);
+	
+	return 0;
 }
 
-/* Stops the main even loop and frees all resources occupied by a 
-	keyact structure including it's member mapping */
-int kact_clear(struct keyact *k){
-	int rc = 0;
-
-	/* We have to send an event to unblock the call to XNextEvent in
-		the event_loop. TODO: propably it's better to outsource the following
-		code for better readability */
-	k->cancel = 1;
+/* Sends an dummy event to a xserver. The event is of type XKeyEvent, which
+	furthermore is of type KeyPress.
+	Param: k = A valid pointer to an keyact structure
+	Return: nothing */
+static void send_devent(struct keyact *k){
+	if(k == NULL)
+		return;
 
 	XEvent ev;
 	XKeyEvent dummy;
@@ -212,11 +228,27 @@ int kact_clear(struct keyact *k){
 	XSendEvent(k->display, XRootWindow(k->display, 0), 0, 
 			KeyPressMask, &ev);
 	XFlush(k->display);
+}
+
+/* Stops the main even loop and frees all resources occupied by a 
+	keyact structure including it's member mapping 
+ 	Param: k = A valid Pointer to a keyact structure */
+int kact_clear(struct keyact *k){
+	int rc = 0;
+	if(k == NULL)
+		return -1;
+
+	/* We have to send an event to unblock the call to XNextEvent in
+		the event_loop. TODO: propably it's better to outsource the 
+		following code for better readability */
+	k->cancel = 1;
+
+	send_devent(k);
+	/* wait for the thread to cancel itself */
 	usleep(SLEEP_TIME);
 
 	XCloseDisplay(k->display);
-	if(k->event_loop != NULL)
-		rc += pthread_cancel(*k->event_loop);
+
 	if(k->mutex != NULL)
 		rc += pthread_mutex_destroy(k->mutex);
 
@@ -253,7 +285,6 @@ static void *event_loop(void *k){
 
 	XSetErrorHandler((XErrorHandler) on_error);
 
-	/* Main event loop */
 	/* Traverses the slist mapping in k until it finds a fitting hotkey 
 	description. 
 	Param: e = A pointer to an XEvent object
@@ -264,7 +295,7 @@ static void *event_loop(void *k){
 		if(env->cancel)
 			break;
 
-		//Synchronize while operating on the list
+		/* Synchronize while operating on the list */
 		pthread_mutex_lock(env->mutex);
 		switch(event.type){
 			case KeyPress:
@@ -275,7 +306,6 @@ static void *event_loop(void *k){
 
 					if(temp->internal.keycode == event.xkey.keycode &&
 							temp->internal.mod_mask == event.xkey.state) {
-						/* run the function only once */
 						temp->func(temp->mod_param);
 						break;
 					}
@@ -293,9 +323,10 @@ static void *event_loop(void *k){
 			default:
 				break;
 		}
-
 		pthread_mutex_unlock(env->mutex);
 	}
+
+	pthread_exit((void *) 0);
 }
 
 /* Little Errorhandler for the X11-System. It currently does nothing */
@@ -338,6 +369,58 @@ int test_func(void *p){
 				break;
 		}
 	return 0;
+}
+
+int test_func2(void *p){
+	struct keycomb *k = (struct keycomb *) p;
+	printf("Modifier: %s\n", k->user_mod);
+	return 0;
+}
+
+void test_mod(void){
+	struct keyact *env = kact_init();
+	if(env == NULL)
+		return;
+
+	/* Tests for a single hotkey representation */
+	struct keycomb *hk1 = kact_get_hk(test_func, "ctrl", 
+							(int) 'f', (void *) 8);
+	struct keycomb *hk2 = kact_get_hk(test_func, "shift", 
+							(int) 'f', (void *) 8);
+	struct keycomb *hk3 = kact_get_hk(test_func, "lock", 
+							(int) 'f', (void *) 8);
+	struct keycomb *hk4 = kact_get_hk(test_func, "mod1", 
+							(int) 'f', (void *) 8);
+	struct keycomb *hk5 = kact_get_hk(test_func, "mod2", 
+							(int) 'f', (void *) 8);
+	struct keycomb *hk6 = kact_get_hk(test_func, "mod3", 
+							(int) 'f', (void *) 8);
+	struct keycomb *hk7 = kact_get_hk(test_func, "mod4", 
+							(int) 'f', (void *) 8);
+	struct keycomb *hk8 = kact_get_hk(test_func, "mod5", 
+							(int) 'f', (void *) 8);
+
+	hk1->mod_param = (void *) hk1;
+	hk2->mod_param = (void *) hk2;
+	hk3->mod_param = (void *) hk3;
+	hk4->mod_param = (void *) hk4;
+	hk5->mod_param = (void *) hk5;
+	hk6->mod_param = (void *) hk6;
+	hk7->mod_param = (void *) hk7;
+	hk8->mod_param = (void *) hk8;
+
+	kact_reg_hk(hk1, env);
+	kact_reg_hk(hk2, env);
+	kact_reg_hk(hk3, env);
+	kact_reg_hk(hk4, env);
+	kact_reg_hk(hk5, env);
+	kact_reg_hk(hk6, env);
+	kact_reg_hk(hk7, env);
+	kact_reg_hk(hk8, env);
+
+	kact_start(env);
+	sleep(1000);
+	CU_ASSERT(kact_clear(env) == 0);
 }
 
 void test_usage(void){
@@ -426,6 +509,7 @@ int main(int argc, char **argv){
 
 	/* Adds tests */
 	if((NULL == CU_add_test(pSuite, "Initialisierungstest", test_init)) || 
+		(NULL == CU_add_test(pSuite, "Usagetest2", test_mod)) || 
 		(NULL == CU_add_test(pSuite, "Usagetest", test_usage))
 	)
 

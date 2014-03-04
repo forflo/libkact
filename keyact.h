@@ -25,7 +25,7 @@
    the list containing your hotkey <-> function mappings.
  */
 
-/* depends on platform */
+/* depends on platform and/or api */
 struct keyact {
 	pthread_t *event_loop;
 	pthread_mutex_t *mutex;
@@ -39,6 +39,11 @@ struct hotkey {
 	unsigned int mod_mask;
 };
 
+struct x11_mask {
+	char modstr[30];
+	int mask;
+};
+
 /* platformindependent */
 struct keycomb {
 	int (*func)(void *mod_param);
@@ -50,7 +55,8 @@ struct keycomb {
 
 int kact_reg_hk(struct keycomb *c, struct keyact *k);
 
-struct keycomb *kact_get_hk(int (*func)(void *mp), const char *mod, int key, void *mp);
+struct keycomb *kact_get_hk(int (*func)(void *mp), const char *mod, int key, 
+									void *mp);
 
 struct keyact *kact_init();
 
@@ -60,7 +66,3 @@ int kact_stop(struct keyact *k);
 
 int kact_clear(struct keyact *k);
 
-struct x11_mask {
-	char modstr[30];
-	int mask;
-};
