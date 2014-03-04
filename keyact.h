@@ -7,9 +7,9 @@
    At first you have to initialize the Library. You can do that by
    calling the function kact_init. You get an runtime structure that is
    used by all other functions. It contains a pthread structure, a 
-   mutex, and a lingly linked lists for all the hotkeys.
+   mutex, and a singly linked lists for all the hotkeys.
 
-   If you done that, you should add some hotkeys. This can be done by 
+   If you've done that, you should add some hotkeys. This can be done by 
    using the Function kact_get_hk(...) which returns an instanciated 
    keycomb structure. The member internal represents the hotkey in an
    platformindependent manner. The resulting structure pointer has to be
