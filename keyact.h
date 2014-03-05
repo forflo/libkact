@@ -4,7 +4,7 @@
 
 /* Library usage explained.
    ------------------------
-   At first you have to initialize the Library. You can do that by
+   At first you have to initialize the library. You can do that by
    calling the function kact_init. You get an runtime structure that is
    used by all other functions. It contains a pthread structure, a 
    mutex, and a singly linked lists for all the hotkeys.
