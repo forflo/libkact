@@ -40,12 +40,4 @@ int slist_rm_content(struct slist *list, void *content);
 /* frees the entire datastructure including all nodes content */
 int slist_free(struct slist *list);
 
-struct dyn_arr {
-	int num;
-	void **arr;
-};
-
-struct dyn_arr *arr_init();
-int arr_add_value(struct dyn_arr *arr, void *val);
-int arr_free(struct dyn_arr *arr);
 

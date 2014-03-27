@@ -1,0 +1,10 @@
+Der Test demonstriert das Abfangen der Tastaturkombinationen 
+
+- ctrl - f
+- alt (links) -f
+- alt (rechts) -f
+
+Der Fokus muss hierbei nicht auf dem Fenster liegen.
+
+Beim modulseitigen Erkennen von Hotkeys, wird der verwendete
+Modifier ausgegeben

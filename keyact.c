@@ -79,8 +79,8 @@ int kact_reg_hk(struct keycomb *c, struct keyact *k){
  				- "alt"
  				- "shift"
  		key = A character 
- 		mp = A arbitrary pointer. This pointer will be passed to the 
-		function func
+ 		mp = An arbitrary pointer. This pointer will be passed to the 
+		function func if it is called
 	Return: A new object of type struct keycomb or NULL if an error
 		occured */
 struct keycomb *kact_get_hk(int (*func)(void *mp), const char *mod, int key, void *mp){
@@ -310,6 +310,7 @@ static void *event_loop(void *k){
 		list resides that has to be traversed */
 	for(;;){
 		XNextEvent(display, &event);
+		/* jump out of the loop if the cancel flag is set*/
 		if(env->cancel)
 			break;
 
@@ -401,7 +402,7 @@ void test_mod(void){
 		return;
 
 	/* Tests for a single hotkey representation */
-	struct keycomb *hk1 = kact_get_hk(test_func2, "ctrl,shift,mod1,mod5", 
+	struct keycomb *hk1 = kact_get_hk(test_func2, "shift", 
 							(int) 't', (void *) 8);
 	struct keycomb *hk2 = kact_get_hk(test_func2, "ctrl", 
 							(int) 'f', (void *) 8);
