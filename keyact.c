@@ -142,7 +142,7 @@ static int transform(struct hotkey *h, struct keycomb *k){
 		if(temp == NULL)
 			break;
 		//iterate through mask[]. TODO remove magic number
-		for(i=0; i<sizeof(mask); i++){
+		for(i=0; i<sizeof(mask)/sizeof(struct x11_mask) ; i++){
 			if(!strcmp(mask[i].modstr, temp))
 				h->mod_mask |= mask[i].mask;
 		}
