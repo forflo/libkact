@@ -58,7 +58,7 @@ int slist_add(struct slist *list, void *content){
 	return 0;
 }
 
-/* Returns the item at index-th index 
+/* Returns the item at index-th index. Indexes begin at 0
  	Param: list = A valid pointer to a slist structure
  	Return: rc=-1 and NULL on failure 
  		rc=0 and arbitrary pointer on success */
